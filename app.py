@@ -26,12 +26,17 @@ async def read_qrcode(file: UploadFile = File(...)):
         results = zxingcpp.read_barcodes(gray)
 
         if not results:
-            return {"content": ""}
+            return {
+                "success": False,
+                "content": ""
+            }
 
-        # Pega o primeiro QR encontrado
         return {
+            "success": True,
             "content": results[0].text
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
