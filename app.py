@@ -1,8 +1,13 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
-import cv2
 import numpy as np
+import cv2
+import zxingcpp
 
-app = FastAPI()
+app = FastAPI(
+    title="QR Reader API",
+    description="API para leitura de QR Code usando ZXing",
+    version="1.0.0"
+)
 
 @app.post("/api/read-qrcode")
 async def read_qrcode(file: UploadFile = File(...)):
@@ -15,10 +20,18 @@ async def read_qrcode(file: UploadFile = File(...)):
         if img is None:
             raise HTTPException(status_code=400, detail="Invalid image")
 
-        detector = cv2.QRCodeDetector()
-        data, bbox, _ = detector.detectAndDecode(img)
+        # ZXing espera imagem em grayscale
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-        return {"content": data or ""}
+        results = zxingcpp.read_barcodes(gray)
+
+        if not results:
+            return {"content": ""}
+
+        # Pega o primeiro QR encontrado
+        return {
+            "content": results[0].text
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
