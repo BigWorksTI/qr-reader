@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
-opencv-python-headless
+zxing-cpp
 numpy
 python-multipart
+opencv-python-headless
