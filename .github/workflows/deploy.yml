@@ -5,6 +5,11 @@ on:
     branches:
       - main
 
+# Impede dois deploys rodarem juntos
+concurrency:
+  group: qrreader-production
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -25,16 +30,44 @@ jobs:
         run: |
           echo "env=qrreader" >> "$GITHUB_OUTPUT"
           echo "env_url=vps.bigworks.com.br" >> "$GITHUB_OUTPUT"
+          echo "run_id=${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
 
-      - name: Limpar pasta temporária
+      #################################################
+      # VALIDA .env ANTES DE QUALQUER COISA
+      #################################################
+      - name: Validar .env
+        shell: bash
+        run: |
+          if [ ! -f .env ]; then
+            echo "❌ Arquivo .env não existe!"
+            exit 1
+          fi
+
+          if [ ! -s .env ]; then
+            echo "❌ Arquivo .env está vazio!"
+            exit 1
+          fi
+
+          echo "✅ .env OK"
+
+      #################################################
+      # LIMPA BUILD ANTIGO (SEGURAMENTE)
+      #################################################
+      - name: Backup da pasta _build se existir
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USER }}
           password: ${{ env.PASSWORD }}
           script: |
-            rm -rf ~/${{ steps.vars.outputs.env }}_build || true
+            if [ -d ~/${{ steps.vars.outputs.env }}_build ]; then
+              mv ~/${{ steps.vars.outputs.env }}_build \
+                 ~/${{ steps.vars.outputs.env }}_build_backup_${{ steps.vars.outputs.run_id }}
+            fi
 
+      #################################################
+      # COPIA PRO BUILD NOVO
+      #################################################
       - name: Copiar arquivos para VPS (build)
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -45,6 +78,9 @@ jobs:
           source: "."
           target: "~/${{ steps.vars.outputs.env }}_build"
 
+      #################################################
+      # BUILD DO CONTAINER
+      #################################################
       - name: Build dos containers
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -53,8 +89,14 @@ jobs:
           password: ${{ env.PASSWORD }}
           script: |
             cd ~/${{ steps.vars.outputs.env }}_build
-            ENV=${{ steps.vars.outputs.env }} ENV_URL=${{ steps.vars.outputs.env_url }} docker compose build
 
+            ENV=${{ steps.vars.outputs.env }} \
+            ENV_URL=${{ steps.vars.outputs.env_url }} \
+            docker compose build
+
+      #################################################
+      # SOBE TEMPORÁRIO PRA VALIDAR
+      #################################################
       - name: Subir temporário para validar
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -63,11 +105,21 @@ jobs:
           password: ${{ env.PASSWORD }}
           script: |
             cd ~/${{ steps.vars.outputs.env }}_build
-            ENV=${{ steps.vars.outputs.env }} ENV_URL=${{ steps.vars.outputs.env_url }} docker compose up -d
-            sleep 5
-            ENV=${{ steps.vars.outputs.env }} ENV_URL=${{ steps.vars.outputs.env_url }} docker compose down
 
-      - name: Trocar pasta oficial
+            ENV=${{ steps.vars.outputs.env }} \
+            ENV_URL=${{ steps.vars.outputs.env_url }} \
+            docker compose up -d
+
+            sleep 5
+
+            ENV=${{ steps.vars.outputs.env }} \
+            ENV_URL=${{ steps.vars.outputs.env_url }} \
+            docker compose down
+
+      #################################################
+      # BACKUP DA PRODUÇÃO ATUAL (SEM APAGAR)
+      #################################################
+      - name: Backup da pasta atual de produção
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ env.HOST }}
@@ -75,11 +127,30 @@ jobs:
           password: ${{ env.PASSWORD }}
           script: |
             if [ -d ~/${{ steps.vars.outputs.env }} ]; then
-              ENV=${{ steps.vars.outputs.env }} ENV_URL=${{ steps.vars.outputs.env_url }} docker compose down || true
-              rm -rf ~/${{ steps.vars.outputs.env }}
-            fi
-            mv ~/${{ steps.vars.outputs.env }}_build ~/${{ steps.vars.outputs.env }}
+              ENV=${{ steps.vars.outputs.env }} \
+              ENV_URL=${{ steps.vars.outputs.env_url }} \
+              docker compose down || true
 
+              mv ~/${{ steps.vars.outputs.env }} \
+                 /tmp/${{ steps.vars.outputs.env }}_${{ steps.vars.outputs.run_id }}
+            fi
+
+      #################################################
+      # PROMOVE BUILD PRA PRODUÇÃO
+      #################################################
+      - name: Promover build para produção
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          password: ${{ env.PASSWORD }}
+          script: |
+            mv ~/${{ steps.vars.outputs.env }}_build \
+               ~/${{ steps.vars.outputs.env }}
+
+      #################################################
+      # SUBIR FINAL
+      #################################################
       - name: Subir containers finais
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -88,4 +159,7 @@ jobs:
           password: ${{ env.PASSWORD }}
           script: |
             cd ~/${{ steps.vars.outputs.env }}
-            ENV=${{ steps.vars.outputs.env }} ENV_URL=${{ steps.vars.outputs.env_url }} docker compose up -d --force-recreate
+
+            ENV=${{ steps.vars.outputs.env }} \
+            ENV_URL=${{ steps.vars.outputs.env_url }} \
+            docker compose up -d --force-recreate
