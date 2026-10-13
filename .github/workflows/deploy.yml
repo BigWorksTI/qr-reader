@@ -10,6 +10,9 @@ concurrency:
   group: qr-reader-production
   cancel-in-progress: true
 
+# SSH: a VPS só aceita chave (VPS_SSH_KEY, vinculada ao Tailon no Vault).
+# O deploy só passa com a janela de TOTP dele aberta no Vault — sem ela, o
+# handshake falha ("unable to authenticate"): abra a janela e rode de novo.
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -18,7 +21,7 @@ jobs:
       HOST: ${{ secrets.VPS_HOST }}
       USER: ${{ secrets.VPS_USER }}
       SSH_PORT: 55050
-      PASSWORD: ${{ secrets.VPS_PASSWORD }}
+      SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
 
     steps:
       - name: Checkout código
@@ -58,7 +61,8 @@ jobs:
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USER }}
-          password: ${{ env.PASSWORD }}
+          key: ${{ env.SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
           script: |
             if [ -d ~/${{ steps.vars.outputs.env }}_build ]; then
               mv ~/${{ steps.vars.outputs.env }}_build \
@@ -74,7 +78,8 @@ jobs:
           debug: true
           host: ${{ env.HOST }}
           username: ${{ env.USER }}
-          password: ${{ env.PASSWORD }}
+          key: ${{ env.SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
           source: "."
           target: "~/${{ steps.vars.outputs.env }}_build"
 
@@ -86,7 +91,8 @@ jobs:
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USER }}
-          password: ${{ env.PASSWORD }}
+          key: ${{ env.SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
           script: |
             cd ~/${{ steps.vars.outputs.env }}_build
 
@@ -102,7 +108,8 @@ jobs:
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USER }}
-          password: ${{ env.PASSWORD }}
+          key: ${{ env.SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
           script: |
             cd ~/${{ steps.vars.outputs.env }}_build
 
@@ -124,7 +131,8 @@ jobs:
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USER }}
-          password: ${{ env.PASSWORD }}
+          key: ${{ env.SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
           script: |
             if [ -d ~/${{ steps.vars.outputs.env }} ]; then
               ENV=${{ steps.vars.outputs.env }} \
@@ -143,7 +151,8 @@ jobs:
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USER }}
-          password: ${{ env.PASSWORD }}
+          key: ${{ env.SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
           script: |
             mv ~/${{ steps.vars.outputs.env }}_build \
                ~/${{ steps.vars.outputs.env }}
@@ -156,7 +165,8 @@ jobs:
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USER }}
-          password: ${{ env.PASSWORD }}
+          key: ${{ env.SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
           script: |
             cd ~/${{ steps.vars.outputs.env }}
 
